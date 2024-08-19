@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transmitindo ao Vivo</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            background: #333;
+            color: #fff;
+            text-align: center;
+            overflow: hidden;
+        }
+
+        img {
+            max-width: 100%;
+            max-height: 50vh; /* Ajuste a altura máxima da imagem */
+            height: auto;
+            margin-bottom: 20px;
+        }
+
+        .status-container {
+            display: flex;
+            gap: 10px;
+        }
+
+        .status-bar {
+            width: 100px;
+            height: 20px;
+            background: #444;
+            border-radius: 5px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .status-bar span {
+            display: block;
+            height: 100%;
+            background: #4caf50;
+            width: 0;
+            transition: width 0.3s;
+        }
+
+        .status-label {
+            margin-top: 10px;
+            font-size: 16px;
+            color: #ccc;
+        }
+    </style>
+</head>
+<body>
+    <img src="seguranca.jpg" alt="Segurança">
+    <h1>Transmitindo ao Vivo</h1>
+    <div class="status-container">
+        <div class="status-bar" id="video-status">
+            <span></span>
+        </div>
+        <div class="status-bar" id="audio-status">
+            <span></span>
+        </div>
+    </div>
+    <div class="status-label">
+        <div>Vídeo</div>
+        <div>Áudio</div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        let localStream;
+        let peerConnection;
+
+        const servers = {
+            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        };
+
+        async function startTransmission() {
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                
+                peerConnection = new RTCPeerConnection(servers);
+                localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+                peerConnection.onicecandidate = ({ candidate }) => {
+                    if (candidate) {
+                        socket.emit('candidate', candidate);
+                    }
+                };
+
+                const offer = await peerConnection.createOffer();
+                await peerConnection.setLocalDescription(offer);
+                socket.emit('offer', offer);
+
+                // Atualizar o status
+                document.getElementById('video-status').querySelector('span').style.width = '100%';
+                document.getElementById('audio-status').querySelector('span').style.width = '100%';
+            } catch (error) {
+                console.error('Erro ao acessar a câmera:', error);
+                alert('Não foi possível acessar a câmera. Verifique as permissões.');
+            }
+        }
+
+        socket.on('offer', async (offer) => {
+            if (!peerConnection) {
+                peerConnection = new RTCPeerConnection(servers);
+                peerConnection.onicecandidate = ({ candidate }) => {
+                    if (candidate) {
+                        socket.emit('candidate', candidate);
+                    }
+                };
+            }
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+            socket.emit('answer', answer);
+        });
+
+        socket.on('answer', (answer) => {
+            peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+        });
+
+        socket.on('candidate', (candidate) => {
+            peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+        });
+
+        // Iniciar a transmissão automaticamente
+        startTransmission();
+
+        // Atualizar a página a cada 30 segundos
+        setInterval(() => {
+            location.reload();
+        }, 30000); // 30.000 milissegundos = 30 segundos
+
+        // Prevenir o uso do botão direito do mouse
+        document.addEventListener('contextmenu', (event) => {
+            event.preventDefault();
+        });
+
+        // Prevenir a tecla F12
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'F12') {
+                event.preventDefault();
+            }
+        });
+
+        // Prevenir o uso de ferramentas de desenvolvedor
+        document.addEventListener('keydown', (event) => {
+            if (event.ctrlKey && event.shiftKey && event.key === 'I') {
+                event.preventDefault(); // F12
+            } else if (event.ctrlKey && event.key === 'U') {
+                event.preventDefault(); // Ctrl+U
+            } else if (event.ctrlKey && event.key === 'S') {
+                event.preventDefault(); // Ctrl+S
+            }
+        });
+    </script>
+</body>
+</html>
